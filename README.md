@@ -10,9 +10,9 @@ Follow the steps below to correctly set up and run the project.
 git clone https://github.com/dummyAIserver/Student-Performance-Predictor.git
 cd Student-Performance-Predictor
 
-2. Unzip the model.zip file
+2. Download pretrained ml model(model.pkl file) from this link #https://drive.google.com/file/d/1547GJ1Wum9L7v9sp8zRSKW37GJeRdMjT/view?usp=drive_link
    
-3. Create a Virtual Environment
+4. Create a Virtual Environment
 On Windows:
 python310 -m venv venv
 venv\Scripts\activate
