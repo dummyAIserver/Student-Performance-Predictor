@@ -1,6 +1,6 @@
 # Student-Performance-Predictor
 
-📌 Project Setup & Running Instructions
+Project Setup & Running Instructions
 This project is a Flask-based web application that predicts students’ final marks using a trained machine-learning model.
 compatible with python3.10 version.
 
