@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 from flask import Flask, render_template, request, redirect, url_for, session, send_file
 import pickle
 import numpy as np
@@ -166,4 +165,3 @@ if st.button("Predict Final Marks"):
     prediction = model.predict(input_data)[0]
 
     st.success(f"Predicted Final Marks: {prediction:.2f}")
->>>>>>> 875acd2202eb07739648d213d3b501ad3825ee3c
