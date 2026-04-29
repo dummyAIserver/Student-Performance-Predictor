@@ -1,166 +1,139 @@
-from flask import Flask, render_template, request, redirect, url_for, session, send_file
-import pickle
-import numpy as np
-import pandas as pd
-import os
-from export_utils import create_excel_export, create_pdf_export, generate_filename
-
-app = Flask(__name__)
-app.secret_key = 'your-secret-key-here-change-in-production'
-
-# Load Model
-model = pickle.load(open("model.pkl", "rb"))
-
-HISTORY_FILE = "history.csv"
-
-
-# ---------------- HOME PAGE ----------------
-@app.route("/")
-def home():
-    result = session.pop('result', None)
-    return render_template("index.html", result=result)
-
-
-# ---------------- PREDICTION ROUTE ----------------
-@app.route("/predict", methods=["POST"])
-def predict():
-    try:
-        student_name = request.form.get("student_name", "Unknown").strip()
-        attendance = float(request.form["attendance"])
-        assignment = float(request.form["assignment"])
-        internal = float(request.form["internal"])
-    except:
-        session['result'] = "Invalid input!"
-        return redirect(url_for('home'))
-
-    # Prediction
-    x = np.array([[attendance, assignment, internal]])
-    prediction = float(model.predict(x)[0])
-    rounded_pred = round(prediction, 2)
-
-    # Save to history.csv
-    row = pd.DataFrame([{
-        "student_name": student_name,
-        "attendance": attendance,
-        "assignment": assignment,
-        "internal": internal,
-        "prediction": rounded_pred
-    }])
-
-    if os.path.exists(HISTORY_FILE):
-        row.to_csv(HISTORY_FILE, mode="a", header=False, index=False)
-    else:
-        row.to_csv(HISTORY_FILE, index=False)
-
-    session['result'] = rounded_pred
-    return redirect(url_for('home'))
-
-
-# ---------------- HISTORY PAGE ----------------
-@app.route("/history")
-def history():
-    if os.path.exists(HISTORY_FILE):
-        df = pd.read_csv(HISTORY_FILE)
-        data = df.to_dict(orient="records")
-    else:
-        data = []
-
-    return render_template("history.html", history=data)
-
-# ---------------- CLEAR HISTORY ROUTE ----------------
-@app.route("/clear-history", methods=["POST"])
-def clear_history():
-    try:
-        if os.path.exists(HISTORY_FILE):
-            os.remove(HISTORY_FILE)
-            return {"success": True, "message": "History cleared successfully"}
-        else:
-            return {"success": True, "message": "No history to clear"}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
-
-
-# ---------------- EXPORT ROUTES ----------------
-@app.route("/export/excel")
-def export_excel():
-    """Export history as Excel file"""
-    try:
-        # Get history data
-        if os.path.exists(HISTORY_FILE):
-            df = pd.read_csv(HISTORY_FILE)
-            history_data = df.to_dict(orient="records")
-        else:
-            history_data = []
-        
-        if not history_data:
-            return {"success": False, "message": "No data to export"}
-        
-        # Create Excel file
-        excel_file = create_excel_export(history_data)
-        filename = generate_filename("xlsx")
-        
-        return send_file(
-            excel_file,
-            as_attachment=True,
-            download_name=filename,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        
-    except Exception as e:
-        return {"success": False, "message": f"Excel export failed: {str(e)}"}
-
-
-@app.route("/export/pdf")
-def export_pdf():
-    """Export history as PDF file"""
-    try:
-        # Get history data
-        if os.path.exists(HISTORY_FILE):
-            df = pd.read_csv(HISTORY_FILE)
-            history_data = df.to_dict(orient="records")
-        else:
-            history_data = []
-        
-        if not history_data:
-            return {"success": False, "message": "No data to export"}
-        
-        # Create PDF file
-        pdf_file = create_pdf_export(history_data)
-        filename = generate_filename("pdf")
-        
-        return send_file(
-            pdf_file,
-            as_attachment=True,
-            download_name=filename,
-            mimetype='application/pdf'
-        )
-        
-    except Exception as e:
-        return {"success": False, "message": f"PDF export failed: {str(e)}"}
-
-if __name__ == "__main__":
-    app.run(debug=True)
 import pickle
 import numpy as np
 import streamlit as st
+import os
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from export_utils import create_excel_export, create_pdf_export, generate_filename
+import io
 
-# Load the trained model
-model = pickle.load(open("model.pkl", "rb"))
-
-st.title("Student Final Marks Prediction")
-
-st.write("Enter attendance, assignment score, and internal marks to predict final marks.")
-
-# Input fields
-attendance = st.number_input("Attendance", placeholder="Enter attendance (0-100)", step=0.1)
-assignment = st.number_input("Assignment Score", placeholder="Enter assignment marks (0-20)", step=0.1)
-internal = st.number_input("Internal Marks", placeholder="Enter internal marks (0-30)", step=0.1)
-
-if st.button("Predict Final Marks"):
-    # Prepare input data
-    input_data = np.array([[attendance, assignment, internal]])
+# Check if model exists, if not train it
+if not os.path.exists("model.pkl"):
+    st.info("Training model... (this runs only once)")
     
-    # Make prediction
-    prediction = model.predict(input_data)[0]
+    # Load dataset and train
+    df = pd.read_csv("student_performance_dataset.csv")
+    X = df[["attendance", "assignment_score", "internal_marks"]]
+    y = df["final_marks"]
+    
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+    
+    model = RandomForestRegressor(n_estimators=400, max_depth=14, random_state=42)
+    model.fit(X_train, y_train)
+    
+    # Save model
+    with open("model.pkl", "wb") as f:
+        pickle.dump(model, f)
+else:
+    # Load the trained model
+    model = pickle.load(open("model.pkl", "rb"))
 
-    st.success(f"Predicted Final Marks: {prediction:.2f}")
+# Streamlit page setup
+st.set_page_config(page_title="Student Performance Predictor", layout="wide")
+
+# History file
+HISTORY_FILE = "history.csv"
+
+# Sidebar navigation
+page = st.sidebar.radio("Navigation", ["Predict", "History", "Export"])
+
+if page == "Predict":
+    st.title("Student Final Marks Prediction")
+    st.write("Enter attendance, assignment score, and internal marks to predict final marks.")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        student_name = st.text_input("Student Name", placeholder="Enter student name")
+    
+    with col2:
+        attendance = st.number_input("Attendance", min_value=0.0, max_value=100.0, step=0.1)
+    
+    with col3:
+        assignment = st.number_input("Assignment Score", min_value=0.0, max_value=20.0, step=0.1)
+    
+    internal = st.number_input("Internal Marks", min_value=0.0, max_value=30.0, step=0.1)
+    
+    if st.button("Predict Final Marks", use_container_width=True):
+        # Prepare input data
+        input_data = np.array([[attendance, assignment, internal]])
+        
+        # Make prediction
+        prediction = model.predict(input_data)[0]
+        rounded_pred = round(prediction, 2)
+        
+        # Save to history
+        row = pd.DataFrame([{
+            "student_name": student_name if student_name else "Unknown",
+            "attendance": attendance,
+            "assignment": assignment,
+            "internal": internal,
+            "prediction": rounded_pred
+        }])
+        
+        if os.path.exists(HISTORY_FILE):
+            row.to_csv(HISTORY_FILE, mode="a", header=False, index=False)
+        else:
+            row.to_csv(HISTORY_FILE, index=False)
+        
+        st.success(f"Predicted Final Marks: **{rounded_pred}**")
+
+elif page == "History":
+    st.title("Prediction History")
+    
+    if os.path.exists(HISTORY_FILE):
+        df = pd.read_csv(HISTORY_FILE)
+        st.dataframe(df, use_container_width=True)
+        
+        if st.button("Clear History"):
+            os.remove(HISTORY_FILE)
+            st.success("History cleared!")
+            st.rerun()
+    else:
+        st.info("No prediction history yet.")
+
+elif page == "Export":
+    st.title("Export History")
+    
+    if os.path.exists(HISTORY_FILE):
+        df = pd.read_csv(HISTORY_FILE)
+        history_data = df.to_dict(orient="records")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📊 Export as Excel", use_container_width=True):
+                try:
+                    excel_file = create_excel_export(history_data)
+                    filename = generate_filename("xlsx")
+                    
+                    st.download_button(
+                        label="Download Excel File",
+                        data=excel_file.getvalue(),
+                        file_name=filename,
+                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
+                    st.success("Excel file ready for download!")
+                except Exception as e:
+                    st.error(f"Excel export failed: {str(e)}")
+        
+        with col2:
+            if st.button("📄 Export as PDF", use_container_width=True):
+                try:
+                    pdf_file = create_pdf_export(history_data)
+                    filename = generate_filename("pdf")
+                    
+                    st.download_button(
+                        label="Download PDF File",
+                        data=pdf_file.getvalue(),
+                        file_name=filename,
+                        mime='application/pdf'
+                    )
+                    st.success("PDF file ready for download!")
+                except Exception as e:
+                    st.error(f"PDF export failed: {str(e)}")
+    else:
+        st.info("No prediction history to export.")
